@@ -1,10 +1,23 @@
-import { Notice, Plugin, Platform, Editor, MarkdownView } from "obsidian";
+import { Notice, Plugin, Platform, Editor, MarkdownView,  } from "obsidian";
 import { Jimp } from 'jimp'
 
 export default class CopyImagePlugin extends Plugin {
 	touchTime = 0;
+  targetImage: HTMLImageElement | null = null;
 
 	async onload() {
+
+    this.registerEvent(this.app.workspace.on('editor-menu', (menu, editor, info)=>{
+      if(!this.targetImage) return;
+			menu.addItem((item) =>
+				item
+          .setTitle('Copy image to clipboard')
+          .setIcon('image')
+          .onClick(()=>this.handleMenuOption())
+          .setDisabled(!this.targetImage)
+			);
+		}))
+
 		if (Platform.isMobile) {
 			this.registerDomEvent(
 				document,
@@ -21,7 +34,8 @@ export default class CopyImagePlugin extends Plugin {
 			this.registerDomEvent(
 				document,
 				"contextmenu",
-				this.handleContextMenu.bind(this)
+				this.handleContextMenu.bind(this),
+        {capture: true}
 			);
 		}
 
@@ -75,6 +89,18 @@ export default class CopyImagePlugin extends Plugin {
 		})
 	}
 
+  
+	private async handleMenuOption() {
+    try {
+      new Notice("Copying the image...");
+      await this.trySetFocus();
+      await this.waitForFocus();
+      await this.copyImageToClipboard(undefined, this.targetImage || undefined);
+    } catch (e) {
+      new Notice(e.message);
+    }
+	}
+
 	private async handleTouchStart(evt: TouchEvent) {
 		if (this.isImage(evt)) {
 			this.touchTime = new Date().getTime();
@@ -95,14 +121,9 @@ export default class CopyImagePlugin extends Plugin {
 
 	private async handleContextMenu(evt: MouseEvent) {
 		if (this.isImage(evt)) {
-			try {
-				new Notice("Copying the image...");
-				await this.trySetFocus();
-				await this.waitForFocus();
-				await this.copyImageToClipboard(evt);
-			} catch (e) {
-				new Notice(e.message);
-			}
+			this.targetImage = evt.target as HTMLImageElement;
+		} else if (this.targetImage) {
+			this.targetImage = null;
 		}
 	}
 
@@ -143,8 +164,9 @@ export default class CopyImagePlugin extends Plugin {
 		}
 	}
 
-	private async copyImageToClipboard(evt: MouseEvent | TouchEvent) {
-		const target = evt.target as HTMLImageElement;
+	private async copyImageToClipboard(evt?: MouseEvent | TouchEvent, targetImage?: HTMLImageElement) {
+		const target = evt?.target as HTMLImageElement || targetImage;
+    if(!target) return;
 		const response = await fetch(target.src);
 		const imageBlob = await response.blob();
 		if (imageBlob.type === "image/png") {
